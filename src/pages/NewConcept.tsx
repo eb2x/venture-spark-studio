@@ -105,13 +105,13 @@ const NewConcept = () => {
     setSubmitting(true);
     setPhase("intake");
     try {
-      const id = await createConcept(parsed.data);
+      const id = await createConcept(parsed.data as Parameters<typeof createConcept>[0]);
       setPhase("analyzing");
       toast.message("Intake accepted · running triage and memo", {
         description: "Lattice is analyzing the concept. This usually takes 20–40 seconds.",
       });
       const result = await generateMemo(id);
-      if (!result.ok) {
+      if (result.ok === false) {
         if (result.status === 429 || /rate/i.test(result.error)) {
           toast.error("Rate limit hit", { description: "Try again in a minute." });
         } else if (result.status === 402 || /credit/i.test(result.error)) {

@@ -63,7 +63,7 @@ const Memo = () => {
     toast.message("Regenerating memo…", { description: "20–40 seconds." });
     const r = await generateMemo(id);
     setRegenerating(false);
-    if (!r.ok) {
+    if (r.ok === false) {
       toast.error("Failed", { description: r.error });
       return;
     }
