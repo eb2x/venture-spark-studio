@@ -1,0 +1,4 @@
+project_id = "iynkakdyuvlowwloynvz"
+
+[functions.generate-memo]
+verify_jwt = false

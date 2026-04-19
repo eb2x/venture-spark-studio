@@ -8,16 +8,17 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { createConcept, generateMemo } from "@/lib/api";
 
 const schema = z.object({
   name: z.string().trim().min(2, "Give it a name").max(80),
-  description: z.string().trim().min(40, "Describe the concept in at least a sentence or two").max(1000),
-  targetCustomer: z.string().trim().min(8, "Be specific about who this is for").max(300),
-  problem: z.string().trim().min(20, "What pain does this remove?").max(600),
-  buyerUser: z.string().trim().min(4, "Buyer and user — same or different?").max(200),
-  businessModel: z.string().trim().min(4, "How does this make money?").max(200),
-  whyNow: z.string().trim().min(10, "Why is this possible / urgent now?").max(400),
-  alternatives: z.string().trim().min(4, "What do people do today?").max(400),
+  description: z.string().trim().min(40, "Describe the concept in at least a sentence or two").max(2000),
+  target_customer: z.string().trim().min(8, "Be specific about who this is for").max(400),
+  problem: z.string().trim().min(20, "What pain does this remove?").max(800),
+  buyer_user: z.string().trim().min(4, "Buyer and user — same or different?").max(300),
+  business_model: z.string().trim().min(4, "How does this make money?").max(300),
+  why_now: z.string().trim().min(10, "Why is this possible / urgent now?").max(600),
+  alternatives: z.string().trim().min(4, "What do people do today?").max(600),
 });
 
 type FormState = z.infer<typeof schema>;
@@ -25,11 +26,11 @@ type FormState = z.infer<typeof schema>;
 const initial: FormState = {
   name: "",
   description: "",
-  targetCustomer: "",
+  target_customer: "",
   problem: "",
-  buyerUser: "",
-  businessModel: "",
-  whyNow: "",
+  buyer_user: "",
+  business_model: "",
+  why_now: "",
   alternatives: "",
 };
 
@@ -48,7 +49,7 @@ const fields: {
     long: true,
   },
   {
-    key: "targetCustomer",
+    key: "target_customer",
     label: "Target customer",
     placeholder: "e.g. VP Operations at $50M–$500M general contractors",
     hint: "Be segment-specific. 'SMBs' is too broad.",
@@ -59,10 +60,10 @@ const fields: {
     placeholder: "What pain, how often, and how painful?",
     long: true,
   },
-  { key: "buyerUser", label: "Buyer / user", placeholder: "e.g. VP Ops buys, PMs use" },
-  { key: "businessModel", label: "Business model", placeholder: "e.g. SaaS, ~$25k ACV per company" },
+  { key: "buyer_user", label: "Buyer / user", placeholder: "e.g. VP Ops buys, PMs use" },
+  { key: "business_model", label: "Business model", placeholder: "e.g. SaaS, ~$25k ACV per company" },
   {
-    key: "whyNow",
+    key: "why_now",
     label: "Why now",
     placeholder: "Why is this concept possible (or urgent) in 2025 and not 2020?",
     long: true,
@@ -79,6 +80,7 @@ const NewConcept = () => {
   const [values, setValues] = useState<FormState>(initial);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "intake" | "analyzing">("idle");
   const navigate = useNavigate();
 
   const filled = Object.values(values).filter((v) => v.trim().length > 0).length;
@@ -101,13 +103,39 @@ const NewConcept = () => {
     }
     setErrors({});
     setSubmitting(true);
-    // Simulate triage — in v2 this calls a Cloud edge function.
-    await new Promise((r) => setTimeout(r, 900));
-    toast.success("Intake accepted · ready for triage", {
-      description: "Showing a sample memo while AI pipeline isn't connected yet.",
-    });
-    setSubmitting(false);
-    navigate("/memo/c-002");
+    setPhase("intake");
+    try {
+      const id = await createConcept(parsed.data as Parameters<typeof createConcept>[0]);
+      setPhase("analyzing");
+      toast.message("Intake accepted · running triage and memo", {
+        description: "Lattice is analyzing the concept. This usually takes 20–40 seconds.",
+      });
+      const result = await generateMemo(id);
+      if (result.ok === false) {
+        if (result.status === 429 || /rate/i.test(result.error)) {
+          toast.error("Rate limit hit", { description: "Try again in a minute." });
+        } else if (result.status === 402 || /credit/i.test(result.error)) {
+          toast.error("AI credits exhausted", {
+            description: "Add funds in Settings → Workspace → Usage.",
+          });
+        } else {
+          toast.error("Memo generation failed", { description: result.error });
+        }
+        // Concept is saved — let user view the placeholder state.
+        navigate(`/memo/${id}`);
+        return;
+      }
+      toast.success("Memo ready", { description: "Opening the analysis." });
+      navigate(`/memo/${id}`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Something went wrong", {
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    } finally {
+      setSubmitting(false);
+      setPhase("idle");
+    }
   };
 
   return (
@@ -135,9 +163,7 @@ const NewConcept = () => {
                       {f.label}
                       <span className="text-destructive/80 ml-1">*</span>
                     </Label>
-                    {f.hint && (
-                      <span className="text-[11px] text-muted-foreground">{f.hint}</span>
-                    )}
+                    {f.hint && <span className="text-[11px] text-muted-foreground">{f.hint}</span>}
                   </div>
                   {f.long ? (
                     <Textarea
@@ -147,6 +173,7 @@ const NewConcept = () => {
                       value={values[f.key]}
                       onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
                       className="bg-card resize-y"
+                      disabled={submitting}
                     />
                   ) : (
                     <Input
@@ -155,6 +182,7 @@ const NewConcept = () => {
                       value={values[f.key]}
                       onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
                       className="bg-card"
+                      disabled={submitting}
                     />
                   )}
                   {errors[f.key] && (
@@ -175,7 +203,11 @@ const NewConcept = () => {
                   disabled={submitting}
                   className="h-11 px-6 bg-foreground text-background hover:bg-foreground/90 shadow-sm"
                 >
-                  {submitting ? "Running intake…" : "Submit for triage →"}
+                  {phase === "intake"
+                    ? "Saving intake…"
+                    : phase === "analyzing"
+                      ? "Generating memo…"
+                      : "Submit for triage →"}
                 </Button>
               </div>
             </form>
@@ -212,6 +244,18 @@ const NewConcept = () => {
                 ))}
               </div>
             </div>
+
+            {phase === "analyzing" && (
+              <div className="rounded-xl border border-primary/30 bg-primary-soft p-5 shadow-xs">
+                <div className="flex items-center gap-2 mono text-[10px] uppercase tracking-widest text-primary">
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                  Analyzing
+                </div>
+                <p className="mt-2 text-sm text-foreground leading-relaxed">
+                  Running competitive triage and market sizing through the AI gateway. Don't navigate away.
+                </p>
+              </div>
+            )}
           </aside>
         </div>
       </main>
