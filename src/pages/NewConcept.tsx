@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { createConcept, generateMemo } from "@/lib/api";
+import { createConcept, generateMemo, runPipeline } from "@/lib/api";
 
 const schema = z.object({
   name: z.string().trim().min(2, "Give it a name").max(80),
@@ -107,25 +107,51 @@ const NewConcept = () => {
     try {
       const id = await createConcept(parsed.data as Parameters<typeof createConcept>[0]);
       setPhase("analyzing");
-      toast.message("Intake accepted · running triage and memo", {
-        description: "Lattice is analyzing the concept. This usually takes 20–40 seconds.",
+      toast.message("Intake accepted · running the full pipeline", {
+        description:
+          "5 stages: intake → triage → sizing → memo → verification. This usually takes 45–90 seconds.",
       });
-      const result = await generateMemo(id);
-      if (result.ok === false) {
-        if (result.status === 429 || /rate/i.test(result.error)) {
-          toast.error("Rate limit hit", { description: "Try again in a minute." });
-        } else if (result.status === 402 || /credit/i.test(result.error)) {
-          toast.error("AI credits exhausted", {
-            description: "Add funds in Settings → Workspace → Usage.",
+
+      // Primary path: the new multi-stage pipeline.
+      const pipeline = await runPipeline(id);
+      if (pipeline.ok === false) {
+        if (pipeline.stopped_at === "analyze-intake") {
+          toast.warning("Concept needs clarification", {
+            description: "Open the memo page to see what to tighten.",
           });
-        } else {
-          toast.error("Memo generation failed", { description: result.error });
+          navigate(`/memo/${id}`);
+          return;
         }
-        // Concept is saved — let user view the placeholder state.
+        // Fall back to the legacy one-shot generator only for transient infra
+        // failures — this is a safety net, not the primary path.
+        const transient =
+          /rate|timeout|502|503|504|network/i.test(pipeline.error) ||
+          pipeline.status === 429 ||
+          pipeline.status === 502 ||
+          pipeline.status === 503 ||
+          pipeline.status === 504;
+        if (transient) {
+          toast.message("Pipeline hit a transient error — using fallback fast path", {
+            description: pipeline.error,
+          });
+          const fallback = await generateMemo(id);
+          if (fallback.ok === false) {
+            toast.error("Memo generation failed", { description: fallback.error });
+            navigate(`/memo/${id}`);
+            return;
+          }
+          toast.success("Memo ready (fast path)", { description: "Opening the analysis." });
+          navigate(`/memo/${id}`);
+          return;
+        }
+        toast.error(`Pipeline failed${pipeline.stopped_at ? ` at ${pipeline.stopped_at}` : ""}`, {
+          description: pipeline.error,
+        });
         navigate(`/memo/${id}`);
         return;
       }
-      toast.success("Memo ready", { description: "Opening the analysis." });
+
+      toast.success("Memo ready", { description: "All 5 stages completed. Opening the analysis." });
       navigate(`/memo/${id}`);
     } catch (err) {
       console.error(err);

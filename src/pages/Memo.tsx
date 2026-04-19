@@ -4,7 +4,14 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { BandPill, BucketPill, ConfidencePill } from "@/components/Pills";
 import { Button } from "@/components/ui/button";
-import { getConcept, getMemo, generateMemo } from "@/lib/api";
+import {
+  getConcept,
+  getMemo,
+  generateMemo,
+  runPipeline,
+  listArtifacts,
+  type PipelineArtifactRow,
+} from "@/lib/api";
 import type { Concept, Memo as MemoType } from "@/data/sampleConcepts";
 import { toast } from "sonner";
 
@@ -34,6 +41,7 @@ const Memo = () => {
   const { id } = useParams<{ id: string }>();
   const [concept, setConcept] = useState<Concept | null>(null);
   const [memo, setMemo] = useState<MemoType | null>(null);
+  const [artifacts, setArtifacts] = useState<PipelineArtifactRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState(false);
 
@@ -41,9 +49,14 @@ const Memo = () => {
     if (!id) return;
     setLoading(true);
     try {
-      const [c, m] = await Promise.all([getConcept(id), getMemo(id)]);
+      const [c, m, a] = await Promise.all([
+        getConcept(id),
+        getMemo(id),
+        listArtifacts(id).catch(() => [] as PipelineArtifactRow[]),
+      ]);
       setConcept(c);
       setMemo(m);
+      setArtifacts(a);
     } catch (e) {
       console.error(e);
       toast.error("Couldn't load memo");
@@ -60,13 +73,24 @@ const Memo = () => {
   const onRegenerate = async () => {
     if (!id) return;
     setRegenerating(true);
-    toast.message("Regenerating memo…", { description: "20–40 seconds." });
-    const r = await generateMemo(id);
-    setRegenerating(false);
+    toast.message("Regenerating via pipeline…", {
+      description: "5 stages · 45–90 seconds.",
+    });
+    const r = await runPipeline(id);
     if (r.ok === false) {
-      toast.error("Failed", { description: r.error });
+      // Emergency fallback to the legacy one-shot path.
+      toast.message("Pipeline failed — trying fast path", { description: r.error });
+      const f = await generateMemo(id);
+      setRegenerating(false);
+      if (f.ok === false) {
+        toast.error("Failed", { description: f.error });
+        return;
+      }
+      toast.success("Memo updated (fast path)");
+      load();
       return;
     }
+    setRegenerating(false);
     toast.success("Memo updated");
     load();
   };
@@ -360,28 +384,89 @@ const Memo = () => {
           </Section>
 
           <Section eyebrow="07" title="Sources & verification">
-            <ul className="space-y-3">
-              {memo.sources.map((s) => (
-                <li
-                  key={s.url}
-                  className="rounded-lg border border-border bg-card p-4 flex items-start justify-between gap-4"
-                >
+            {memo.verification && (
+              <div className="rounded-lg border border-border bg-surface p-4 mb-4">
+                <div className="mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
+                  Verification pass · {new Date(memo.verification.ranAt).toLocaleString()}
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                   <div>
-                    <a
-                      href={s.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-medium text-foreground hover:text-primary transition-colors"
-                    >
-                      {s.title}
-                    </a>
-                    <div className="text-sm text-muted-foreground mt-0.5">Supports: {s.supports}</div>
+                    <div className="text-muted-foreground text-xs">URLs checked</div>
+                    <div className="mono mt-0.5">{memo.verification.urlChecksTotal}</div>
                   </div>
-                  <span className="text-[11px] mono text-muted-foreground shrink-0 hidden md:block">
-                    {safeHost(s.url)}
-                  </span>
-                </li>
-              ))}
+                  <div>
+                    <div className="text-muted-foreground text-xs">URLs failed</div>
+                    <div
+                      className={
+                        "mono mt-0.5 " +
+                        (memo.verification.urlChecksFailed > 0 ? "text-warning" : "")
+                      }
+                    >
+                      {memo.verification.urlChecksFailed}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground text-xs">Claims flagged</div>
+                    <div className="mono mt-0.5">
+                      {memo.verification.unsupportedClaimsAdded}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground text-xs">Confidence</div>
+                    <div className="mono mt-0.5">
+                      {memo.verification.confidenceDowngraded ? (
+                        <span className="text-warning">
+                          {memo.verification.originalConfidence} → {memo.confidence}
+                        </span>
+                      ) : (
+                        <span className="capitalize">{memo.confidence} (held)</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <ul className="space-y-3">
+              {memo.sources.map((s) => {
+                const status = (s as { status?: string }).status;
+                const failed = status === "unreachable" || status === "unsupported";
+                return (
+                  <li
+                    key={s.url}
+                    className={
+                      "rounded-lg border p-4 flex items-start justify-between gap-4 " +
+                      (failed
+                        ? "border-warning/40 bg-warning/5"
+                        : "border-border bg-card")
+                    }
+                  >
+                    <div>
+                      <a
+                        href={s.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-medium text-foreground hover:text-primary transition-colors"
+                      >
+                        {s.title}
+                      </a>
+                      <div className="text-sm text-muted-foreground mt-0.5">
+                        Supports: {s.supports}
+                      </div>
+                      {status && (
+                        <div className="mono text-[10px] uppercase tracking-widest mt-1.5 text-muted-foreground">
+                          {status}
+                          {(s as { http_status?: number | null }).http_status
+                            ? ` · HTTP ${(s as { http_status?: number }).http_status}`
+                            : ""}
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-[11px] mono text-muted-foreground shrink-0 hidden md:block">
+                      {safeHost(s.url)}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
             {memo.unsupportedClaims.length > 0 && (
               <div className="rounded-lg border border-warning/40 bg-warning/5 p-4 mt-4">
@@ -397,11 +482,52 @@ const Memo = () => {
                   ))}
                 </ul>
                 <p className="text-xs text-muted-foreground mt-3">
-                  When verification is weak, Lattice lowers confidence rather than presenting certainty.
+                  When verification is weak, Lattice lowers confidence rather than
+                  presenting certainty.
                 </p>
               </div>
             )}
           </Section>
+
+          {artifacts.length > 0 && (
+            <Section eyebrow="08" title="Pipeline">
+              <div className="text-sm text-muted-foreground">
+                Per-stage outputs from the 5-stage pipeline. Each row is an artifact you
+                can inspect or rerun from that point.
+              </div>
+              <ul className="space-y-2 mt-2">
+                {artifacts.map((a) => (
+                  <li
+                    key={a.id}
+                    className="rounded-lg border border-border bg-card p-3 flex items-center justify-between gap-4"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={
+                          "h-2 w-2 rounded-full " +
+                          (a.status === "ok"
+                            ? "bg-primary"
+                            : a.status === "skipped"
+                              ? "bg-muted-foreground"
+                              : "bg-warning")
+                        }
+                      />
+                      <span className="mono text-[11px] uppercase tracking-widest">
+                        {a.stage}
+                      </span>
+                      <span className="text-xs text-muted-foreground">v{a.version}</span>
+                      <span className="text-xs text-muted-foreground capitalize">
+                        {a.status}
+                      </span>
+                    </div>
+                    <div className="text-[11px] mono text-muted-foreground">
+                      {new Date(a.created_at).toLocaleString()}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
         </article>
       </main>
 

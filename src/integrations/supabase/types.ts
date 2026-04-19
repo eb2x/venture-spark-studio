@@ -25,9 +25,12 @@ export type Database = {
           created_at: string
           description: string
           id: string
+          last_error: string | null
+          last_stage: string | null
           market_attractiveness: string | null
           name: string
           one_liner: string | null
+          pipeline_status: string
           problem: string
           status: string
           target_customer: string
@@ -45,9 +48,12 @@ export type Database = {
           created_at?: string
           description: string
           id?: string
+          last_error?: string | null
+          last_stage?: string | null
           market_attractiveness?: string | null
           name: string
           one_liner?: string | null
+          pipeline_status?: string
           problem: string
           status?: string
           target_customer: string
@@ -65,9 +71,12 @@ export type Database = {
           created_at?: string
           description?: string
           id?: string
+          last_error?: string | null
+          last_stage?: string | null
           market_attractiveness?: string | null
           name?: string
           one_liner?: string | null
+          pipeline_status?: string
           problem?: string
           status?: string
           target_customer?: string
@@ -76,6 +85,59 @@ export type Database = {
           why_now?: string
         }
         Relationships: []
+      }
+      pipeline_artifacts: {
+        Row: {
+          concept_id: string
+          created_at: string
+          duration_ms: number | null
+          error: string | null
+          id: string
+          model: string | null
+          payload: Json
+          stage: string
+          status: string
+          tokens_in: number | null
+          tokens_out: number | null
+          version: number
+        }
+        Insert: {
+          concept_id: string
+          created_at?: string
+          duration_ms?: number | null
+          error?: string | null
+          id?: string
+          model?: string | null
+          payload?: Json
+          stage: string
+          status?: string
+          tokens_in?: number | null
+          tokens_out?: number | null
+          version?: number
+        }
+        Update: {
+          concept_id?: string
+          created_at?: string
+          duration_ms?: number | null
+          error?: string | null
+          id?: string
+          model?: string | null
+          payload?: Json
+          stage?: string
+          status?: string
+          tokens_in?: number | null
+          tokens_out?: number | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_artifacts_concept_id_fkey"
+            columns: ["concept_id"]
+            isOneToOne: false
+            referencedRelation: "concepts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       memos: {
         Row: {

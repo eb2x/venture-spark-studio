@@ -1,9 +1,13 @@
-// Sample concepts used across the demo (no backend yet).
-// Replace with Cloud-backed data in a follow-up step.
+// Sample concepts used in the marketing/landing demo.
+//
+// Domain types (Concept, Memo, Evidence, Band, Confidence, DecisionBucket, etc.)
+// now live in @shared/schemas — the single source of truth shared between the
+// frontend and Supabase edge functions. This file only holds the legacy
+// camelCase view types used by the demo components, plus the static samples.
 
-export type DecisionBucket = "kill" | "investigate" | "validate";
-export type Band = "low" | "medium" | "high";
-export type Confidence = "low" | "medium" | "high";
+import type { Band, Confidence, DecisionBucket } from "@shared/schemas";
+
+export type { Band, Confidence, DecisionBucket };
 
 export interface Source {
   title: string;
@@ -18,6 +22,11 @@ export interface Competitor {
   note: string;
 }
 
+/**
+ * Legacy camelCase Concept view used by UI components. The DB/edge-function
+ * shape is snake_case (see @shared/schemas ConceptInput). Mapping between the
+ * two happens in src/lib/api.ts.
+ */
 export interface Concept {
   id: string;
   name: string;
@@ -37,6 +46,10 @@ export interface Concept {
   competitiveCrowding?: Band;
 }
 
+/**
+ * Legacy camelCase Memo view used by UI components. The canonical snake_case
+ * shape lives in @shared/schemas.Memo.
+ */
 export interface Memo {
   conceptId: string;
   summary: string;
@@ -59,6 +72,15 @@ export interface Memo {
   nextSteps: string[];
   sources: Source[];
   unsupportedClaims: string[];
+  /** Verification metadata set by verify-claims. Null until verification runs. */
+  verification?: {
+    ranAt: string;
+    urlChecksTotal: number;
+    urlChecksFailed: number;
+    unsupportedClaimsAdded: number;
+    confidenceDowngraded: boolean;
+    originalConfidence: Confidence | null;
+  } | null;
 }
 
 export const sampleConcepts: Concept[] = [
@@ -183,5 +205,6 @@ export const sampleMemos: Record<string, Memo> = {
     unsupportedClaims: [
       "Specific 15–25% rework rate (cited from interviews, not published data — flagged for validation).",
     ],
+    verification: null,
   },
 };
