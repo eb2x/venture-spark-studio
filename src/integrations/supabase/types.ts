@@ -14,7 +14,101 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      concepts: {
+        Row: {
+          alternatives: string
+          bucket: string | null
+          business_model: string
+          buyer_user: string
+          competitive_crowding: string | null
+          confidence: string | null
+          created_at: string
+          description: string
+          id: string
+          market_attractiveness: string | null
+          name: string
+          one_liner: string | null
+          problem: string
+          status: string
+          target_customer: string
+          updated_at: string
+          vertical: string | null
+          why_now: string
+        }
+        Insert: {
+          alternatives: string
+          bucket?: string | null
+          business_model: string
+          buyer_user: string
+          competitive_crowding?: string | null
+          confidence?: string | null
+          created_at?: string
+          description: string
+          id?: string
+          market_attractiveness?: string | null
+          name: string
+          one_liner?: string | null
+          problem: string
+          status?: string
+          target_customer: string
+          updated_at?: string
+          vertical?: string | null
+          why_now: string
+        }
+        Update: {
+          alternatives?: string
+          bucket?: string | null
+          business_model?: string
+          buyer_user?: string
+          competitive_crowding?: string | null
+          confidence?: string | null
+          created_at?: string
+          description?: string
+          id?: string
+          market_attractiveness?: string | null
+          name?: string
+          one_liner?: string | null
+          problem?: string
+          status?: string
+          target_customer?: string
+          updated_at?: string
+          vertical?: string | null
+          why_now?: string
+        }
+        Relationships: []
+      }
+      memos: {
+        Row: {
+          concept_id: string
+          created_at: string
+          id: string
+          payload: Json
+          updated_at: string
+        }
+        Insert: {
+          concept_id: string
+          created_at?: string
+          id?: string
+          payload: Json
+          updated_at?: string
+        }
+        Update: {
+          concept_id?: string
+          created_at?: string
+          id?: string
+          payload?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memos_concept_id_fkey"
+            columns: ["concept_id"]
+            isOneToOne: true
+            referencedRelation: "concepts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
